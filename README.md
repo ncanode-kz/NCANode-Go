@@ -74,10 +74,12 @@ Swagger UI: `http://localhost:14579/swagger-ui.html`
 Те же пути, что и у springdoc-openapi в Java-версии. Спека (`internal/openapi/openapi.json`)
 сконвертирована из `openapi.yml` оригинального NCANode - paths/schemas 1:1
 совпадают с Go DTO (`internal/dto`), обрезаны только actuator-эндпоинты,
-которых нет в Go-версии (`/actuator`, `/actuator/health/**`). Swagger UI
-рендерится статичной HTML-страницей, подгружающей `swagger-ui-dist` с CDN
-(jsdelivr) - для полностью офлайн-окружения потребуется завендорить эти
-файлы локально.
+которых нет в Go-версии (`/actuator`, `/actuator/health/**`).
+
+Ассеты Swagger UI (`internal/openapi/static/`) полностью завёрнуты в
+бинарник (`go:embed`) и раздаются с `/swagger-ui/*` - без обращения к CDN в
+рантайме. Файлы взяты из `org.webjars:swagger-ui:5.11.8` (та же версия, что
+тянет springdoc-openapi в Java NCANode, лицензия Apache-2.0).
 
 ## Тесты
 

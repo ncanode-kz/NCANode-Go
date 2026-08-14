@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ncanode-kz/NCANode-Go/internal/httpapi"
@@ -52,5 +53,26 @@ func TestRegisterRoutes(t *testing.T) {
 	}
 	if ct := resp2.Header.Get("Content-Type"); ct != "text/html; charset=utf-8" {
 		t.Errorf("expected html content type, got %q", ct)
+	}
+
+	if strings.Contains(swaggerUIHTML, "://") {
+		t.Fatal("swagger UI page must not reference any external (CDN) URL")
+	}
+
+	for _, asset := range []string{
+		"/swagger-ui/swagger-ui.css",
+		"/swagger-ui/swagger-ui-bundle.js",
+		"/swagger-ui/swagger-ui-standalone-preset.js",
+		"/swagger-ui/favicon-32x32.png",
+	} {
+		resp, err := http.Get(srv.URL + asset)
+		if err != nil {
+			t.Fatalf("get %s: %s", asset, err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200 for %s, got %d", asset, resp.StatusCode)
+		}
 	}
 }
