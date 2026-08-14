@@ -12,7 +12,7 @@
 - [x] **Phase B** - `/cms/sign`, `/cms/sign/add`, `/cms/verify`, `/cms/extract`, `/x509/info`, `/x509/sign`, `/x509/verify`, `/pkcs12/info`, `/pkcs12/aliases`, `/jwt/encode`, `/jwt/decode`.
 - [x] **Phase C** - `/xml/sign`, `/xml/verify`, `/wsse/sign`, `/wsse/verify`.
 - [x] **Phase D** - `/pdf/sign`, `/pdf/verify`.
-- [ ] **Phase E** - тестовое покрытие ≥90%
+- [x] **Phase E** - тестовое покрытие ≥90% (90.06% суммарно, см. `## Тесты`).
 
 ### Известные ограничения (Phase B)
 
@@ -73,3 +73,18 @@ go test ./...
 ```
 
 Фикстуры (`internal/testdata/certs`) - тестовые GOST-сертификаты pki.gov.kz (test-контур), не боевые ключи.
+
+Суммарное покрытие (statement coverage по всем пакетам, включая перекрёстное
+покрытие через `internal/testutil` и `cmd/ncanode`, посчитанное через
+`go test ./... -coverpkg=./...`) - **90.06%**. `main()` в `cmd/ncanode`
+намеренно не покрыт юнит-тестами - это тонкая связующая обвязка
+(`os.Exit`, `http.Server.ListenAndServe`), которую тестировать модульно не
+имеет смысла; вся содержательная логика вынесена в тестируемые
+`bootstrapCA`/`bootstrapCRL`/`newHandler` в том же пакете.
+
+Интеграционные interop-тесты со сверкой против живого Java NCANode (за
+build tag `oracle`, не входят в обычный `go test ./...`):
+
+```sh
+go test -tags oracle ./...
+```

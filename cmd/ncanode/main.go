@@ -25,33 +25,58 @@ import (
 	xmlsvc "github.com/ncanode-kz/NCANode-Go/internal/service/xml"
 )
 
+// bootstrapCA соответствует поведению Java NCANode: без валидных
+// CA-сертификатов сервис не может строить доверенные цепочки, поэтому
+// ошибка здесь фатальна для старта (см. System.exit(32) в
+// kz.ncanode.service.CaService), в отличие от CRL.
+func bootstrapCA(ctx context.Context, cfg config.Config) (*caservice.Service, error) {
+	ca := caservice.New(cfg.CA.URLs, cfg.CA.TTL)
+	if err := ca.Bootstrap(ctx); err != nil {
+		return nil, err
+	}
+	ca.StartBackgroundRefresh(ctx)
+	slog.Info("CA certificates loaded", "count", len(ca.Certs()))
+	return ca, nil
+}
+
+// bootstrapCRL - в отличие от CA-сертификатов, CRL не блокирует старт (см.
+// Java CrlService: логирует и продолжает, ревокацию можно проверить позже
+// после фонового обновления).
+func bootstrapCRL(ctx context.Context, cfg config.Config) *crlservice.Service {
+	crl := crlservice.New(cfg.CacheDir, cfg.CRL.Enabled, cfg.CRL.URLs, cfg.CRL.TTL, cfg.CRL.DeltaURLs, cfg.CRL.DeltaTTL)
+	if err := crl.Bootstrap(ctx); err != nil {
+		slog.Error("failed to bootstrap CRL cache, will retry in background", "error", err)
+	}
+	crl.StartBackgroundRefresh(ctx)
+	return crl
+}
+
+func newHandler(a *app.App, debug bool) http.Handler {
+	srv := httpapi.New(debug)
+	srv.RegisterHealth()
+	cms.RegisterRoutes(srv, a)
+	x509svc.RegisterRoutes(srv, a)
+	pkcs12.RegisterRoutes(srv, a)
+	jwt.RegisterRoutes(srv, a)
+	xmlsvc.RegisterRoutes(srv, a)
+	wsse.RegisterRoutes(srv, a)
+	pdf.RegisterRoutes(srv, a)
+	return srv.Handler()
+}
+
 func main() {
 	cfg := config.Load()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	ca := caservice.New(cfg.CA.URLs, cfg.CA.TTL)
-	if err := ca.Bootstrap(ctx); err != nil {
-		// Соответствует поведению Java NCANode: без валидных CA-сертификатов
-		// сервис не может строить доверенные цепочки, поэтому падает сразу
-		// при старте, а не отдаёт частично рабочий API (см. System.exit(32)
-		// в kz.ncanode.service.CaService).
+	ca, err := bootstrapCA(ctx, cfg)
+	if err != nil {
 		slog.Error("failed to bootstrap CA certificates", "error", err)
 		os.Exit(32)
 	}
-	ca.StartBackgroundRefresh(ctx)
-	slog.Info("CA certificates loaded", "count", len(ca.Certs()))
 
-	crl := crlservice.New(cfg.CacheDir, cfg.CRL.Enabled, cfg.CRL.URLs, cfg.CRL.TTL, cfg.CRL.DeltaURLs, cfg.CRL.DeltaTTL)
-	if err := crl.Bootstrap(ctx); err != nil {
-		// В отличие от CA-сертификатов, CRL - не блокер старта (см. Java
-		// CrlService: логирует и продолжает, ревокацию можно проверить позже
-		// после фонового обновления).
-		slog.Error("failed to bootstrap CRL cache, will retry in background", "error", err)
-	}
-	crl.StartBackgroundRefresh(ctx)
-
+	crl := bootstrapCRL(ctx, cfg)
 	ocsp := ocspservice.New(cfg.OCSPURL)
 
 	a, err := app.New(cfg, ca, crl, ocsp)
@@ -61,19 +86,9 @@ func main() {
 	}
 	defer a.Close() //nolint:errcheck
 
-	srv := httpapi.New(cfg.Debug)
-	srv.RegisterHealth()
-	cms.RegisterRoutes(srv, a)
-	x509svc.RegisterRoutes(srv, a)
-	pkcs12.RegisterRoutes(srv, a)
-	jwt.RegisterRoutes(srv, a)
-	xmlsvc.RegisterRoutes(srv, a)
-	wsse.RegisterRoutes(srv, a)
-	pdf.RegisterRoutes(srv, a)
-
 	httpServer := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: srv.Handler(),
+		Handler: newHandler(a, cfg.Debug),
 	}
 
 	go func() {

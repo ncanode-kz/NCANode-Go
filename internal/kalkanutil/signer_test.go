@@ -1,6 +1,43 @@
 package kalkanutil
 
-import "testing"
+import (
+	"encoding/base64"
+	"strings"
+	"testing"
+
+	"github.com/ncanode-kz/NCANode-Go/internal/testutil"
+)
+
+func TestPEMFromBase64Body(t *testing.T) {
+	got := PEMFromBase64Body([]byte("YWJj"))
+	want := "-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----\n"
+	if got != want {
+		t.Fatalf("PEMFromBase64Body = %q, want %q", got, want)
+	}
+}
+
+func TestLoadSigner(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	key := testutil.ReadFixture(t, "individual/valid/individual_valid.p12")
+	keyB64 := base64.StdEncoding.EncodeToString(key)
+
+	certPEM, err := LoadSigner(a.Shared, keyB64, testutil.TestCertPassword)
+	if err != nil {
+		t.Fatalf("LoadSigner: %s", err)
+	}
+	if !strings.Contains(certPEM, "BEGIN CERTIFICATE") {
+		t.Fatalf("expected PEM certificate, got: %s", certPEM)
+	}
+}
+
+func TestLoadSignerBadBase64(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	if _, err := LoadSigner(a.Shared, "not-base64!!", "pw"); err == nil {
+		t.Fatal("expected error for invalid base64 key")
+	}
+}
 
 func TestPEMFromDERRoundtrip(t *testing.T) {
 	der := []byte{0x01, 0x02, 0x03, 0x04}

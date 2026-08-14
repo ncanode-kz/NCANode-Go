@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -154,6 +155,34 @@ func TestDebugDetails(t *testing.T) {
 				t.Fatalf("expected non-empty details")
 			}
 		})
+	}
+}
+
+func TestHandleNonAppError(t *testing.T) {
+	s := New(false)
+	Handle(s, "POST /fail", func(r *http.Request, req echoReq) (echoResp, error) {
+		return echoResp{}, errors.New("plain error")
+	})
+
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/fail", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("post: %s", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", resp.StatusCode)
+	}
+
+	var got errorEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %s", err)
+	}
+	if got.Message != "plain error" {
+		t.Fatalf("unexpected message: %+v", got)
 	}
 }
 

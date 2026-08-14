@@ -1,7 +1,11 @@
 package pdf
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -123,6 +127,69 @@ func TestMultiSigner(t *testing.T) {
 	}
 }
 
+func TestVerifyRevokedSignerCRL(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	signResp, err := sign(a, dto.PdfSignRequest{
+		PDF: samplePDFBase64(t),
+		Signers: []dto.PdfSigner{
+			{Reason: "revoked", Signer: signerReq(t, "individual/revoked/individual_revoked.p12")},
+		},
+	})
+	if err != nil {
+		t.Fatalf("sign: %s", err)
+	}
+
+	verifyResp, err := verify(a, dto.PdfVerifyRequest{
+		PDF: signResp.PDF,
+		VerifyRequest: dto.VerifyRequest{
+			RevocationCheck: []dto.RevocationCheck{dto.RevocationCheckCRL},
+		},
+	})
+	if err != nil {
+		t.Fatalf("verify: %s", err)
+	}
+	if verifyResp.Valid {
+		t.Fatal("expected valid=false for a revoked signer")
+	}
+	if len(verifyResp.Signers) != 1 || verifyResp.Signers[0].Valid {
+		t.Fatalf("expected 1 invalid signer, got %+v", verifyResp.Signers)
+	}
+}
+
+func TestSignInvalidBase64(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	if _, err := sign(a, dto.PdfSignRequest{
+		PDF:     "not-base64!!",
+		Signers: []dto.PdfSigner{{Signer: signerReq(t, "individual/valid/individual_valid.p12")}},
+	}); err == nil {
+		t.Fatal("expected error for invalid base64 pdf")
+	}
+}
+
+func TestSignLoadSignerFailure(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	req := signerReq(t, "individual/valid/individual_valid.p12")
+	req.Password = "wrong-password"
+
+	if _, err := sign(a, dto.PdfSignRequest{
+		PDF:     samplePDFBase64(t),
+		Signers: []dto.PdfSigner{{Signer: req}},
+	}); err == nil {
+		t.Fatal("expected error for wrong key password")
+	}
+}
+
+func TestVerifyInvalidBase64(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	if _, err := verify(a, dto.PdfVerifyRequest{PDF: "not-base64!!"}); err == nil {
+		t.Fatal("expected error for invalid base64 pdf")
+	}
+}
+
 func TestVerifyNoSignatures(t *testing.T) {
 	a := testutil.NewApp(t)
 
@@ -148,5 +215,61 @@ func TestRegisterRoutesSmoke(t *testing.T) {
 
 	if s.Handler() == nil {
 		t.Fatal("expected handler to be set")
+	}
+}
+
+func TestRegisterRoutesHTTP(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	s := httpapi.New(false)
+	RegisterRoutes(s, a)
+
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	signer := signerReq(t, "individual/valid/individual_valid.p12")
+	buf, err := json.Marshal(map[string]any{
+		"pdf": samplePDFBase64(t),
+		"signers": []any{map[string]any{
+			"reason": "http route test",
+			"signer": map[string]string{"key": signer.Key, "password": signer.Password},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %s", err)
+	}
+
+	resp, err := http.Post(srv.URL+"/pdf/sign", "application/json", bytes.NewReader(buf))
+	if err != nil {
+		t.Fatalf("post /pdf/sign: %s", err)
+	}
+	defer resp.Body.Close()
+
+	var signed map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&signed); err != nil {
+		t.Fatalf("decode: %s", err)
+	}
+	pdf, _ := signed["pdf"].(string)
+	if pdf == "" {
+		t.Fatalf("expected non-empty pdf from /pdf/sign, got: %+v", signed)
+	}
+
+	buf2, err := json.Marshal(map[string]any{"pdf": pdf, "revocationCheck": []string{}})
+	if err != nil {
+		t.Fatalf("marshal: %s", err)
+	}
+
+	resp2, err := http.Post(srv.URL+"/pdf/verify", "application/json", bytes.NewReader(buf2))
+	if err != nil {
+		t.Fatalf("post /pdf/verify: %s", err)
+	}
+	defer resp2.Body.Close()
+
+	var verified map[string]any
+	if err := json.NewDecoder(resp2.Body).Decode(&verified); err != nil {
+		t.Fatalf("decode: %s", err)
+	}
+	if valid, _ := verified["valid"].(bool); !valid {
+		t.Fatalf("expected valid=true from /pdf/verify, got: %+v", verified)
 	}
 }

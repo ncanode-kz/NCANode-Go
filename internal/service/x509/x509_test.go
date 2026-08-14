@@ -1,7 +1,11 @@
 package x509
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/ncanode-kz/NCANode-Go/internal/app"
@@ -115,6 +119,104 @@ func TestInfoEmptyCertsIsInvalid(t *testing.T) {
 	}
 }
 
+func TestInfoBuildFailureOnGarbageCert(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	garbage := base64.StdEncoding.EncodeToString([]byte("this is not a certificate"))
+
+	resp, err := info(a, dto.X509InfoRequest{Certs: []string{garbage}})
+	if err != nil {
+		t.Fatalf("info: %s", err)
+	}
+	if resp.Valid {
+		t.Fatal("expected valid=false for a garbage certificate")
+	}
+	if len(resp.Signers) != 1 || resp.Signers[0] != nil {
+		t.Fatalf("expected 1 nil signer, got %+v", resp.Signers)
+	}
+}
+
+func TestInfoRevokedCertIsInvalid(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	certDER := certDERFromP12(t, a, "individual/revoked/individual_revoked.p12")
+	certB64 := base64.StdEncoding.EncodeToString(certDER)
+
+	resp, err := info(a, dto.X509InfoRequest{
+		Certs:         []string{certB64},
+		VerifyRequest: dto.VerifyRequest{RevocationCheck: []dto.RevocationCheck{dto.RevocationCheckCRL}},
+	})
+	if err != nil {
+		t.Fatalf("info: %s", err)
+	}
+	if resp.Valid {
+		t.Fatal("expected valid=false for a revoked certificate")
+	}
+	if len(resp.Signers) != 1 || resp.Signers[0] == nil || resp.Signers[0].Valid {
+		t.Fatalf("expected 1 non-nil invalid signer, got %+v", resp.Signers)
+	}
+}
+
+func TestSignEmptyKey(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	if _, err := sign(a, dto.SbaSignRequest{Data: "no key"}); err == nil {
+		t.Fatal("expected error for empty signer key")
+	}
+}
+
+func TestSignLoadSignerFailure(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	req := signerReq(t, "individual/valid/individual_valid.p12")
+	req.Password = "wrong-password"
+
+	if _, err := sign(a, dto.SbaSignRequest{Data: "bad password", Signer: req}); err == nil {
+		t.Fatal("expected error for wrong key password")
+	}
+}
+
+func TestVerifyCertificateInvalidBase64(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	resp, err := verify(a, dto.SbaVerifyRequest{Certificate: "not-base64!!", Signature: "AA==", Data: "x"})
+	if err != nil {
+		t.Fatalf("verify: %s", err)
+	}
+	if resp.Valid {
+		t.Fatal("expected valid=false for invalid base64 certificate")
+	}
+	if len(resp.Signers) != 1 || resp.Signers[0] != nil {
+		t.Fatalf("expected 1 nil signer, got %+v", resp.Signers)
+	}
+}
+
+func TestVerifySignatureInvalidBase64(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	certDER := certDERFromP12(t, a, "individual/valid/individual_valid.p12")
+
+	_, err := verify(a, dto.SbaVerifyRequest{
+		Certificate: base64.StdEncoding.EncodeToString(certDER),
+		Signature:   "not-base64!!",
+		Data:        "x",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid base64 signature")
+	}
+}
+
+func TestVerifyBuildFailureOnGarbageCert(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	garbage := base64.StdEncoding.EncodeToString([]byte("this is not a certificate"))
+
+	_, err := verify(a, dto.SbaVerifyRequest{Certificate: garbage, Signature: "AA==", Data: "x"})
+	if err == nil {
+		t.Fatal("expected error building certificate info from a garbage certificate")
+	}
+}
+
 func TestRegisterRoutesSmoke(t *testing.T) {
 	a := testutil.NewApp(t)
 
@@ -123,6 +225,68 @@ func TestRegisterRoutesSmoke(t *testing.T) {
 
 	if s.Handler() == nil {
 		t.Fatal("expected handler to be set")
+	}
+}
+
+func TestRegisterRoutesHTTP(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	s := httpapi.New(false)
+	RegisterRoutes(s, a)
+
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	signer := signerReq(t, "individual/valid/individual_valid.p12")
+
+	buf, _ := json.Marshal(map[string]any{
+		"data":   "http route test",
+		"signer": map[string]string{"key": signer.Key, "password": signer.Password},
+	})
+	resp, err := http.Post(srv.URL+"/x509/sign", "application/json", bytes.NewReader(buf))
+	if err != nil {
+		t.Fatalf("post /x509/sign: %s", err)
+	}
+	defer resp.Body.Close()
+
+	var signed map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&signed); err != nil {
+		t.Fatalf("decode: %s", err)
+	}
+	cert, _ := signed["certificate"].(string)
+	sig, _ := signed["signature"].(string)
+	if cert == "" || sig == "" {
+		t.Fatalf("expected non-empty certificate/signature from /x509/sign, got: %+v", signed)
+	}
+
+	buf2, _ := json.Marshal(map[string]any{"certificate": cert, "signature": sig, "data": "http route test"})
+	resp2, err := http.Post(srv.URL+"/x509/verify", "application/json", bytes.NewReader(buf2))
+	if err != nil {
+		t.Fatalf("post /x509/verify: %s", err)
+	}
+	defer resp2.Body.Close()
+
+	var verified map[string]any
+	if err := json.NewDecoder(resp2.Body).Decode(&verified); err != nil {
+		t.Fatalf("decode: %s", err)
+	}
+	if valid, _ := verified["valid"].(bool); !valid {
+		t.Fatalf("expected valid=true from /x509/verify, got: %+v", verified)
+	}
+
+	buf3, _ := json.Marshal(map[string]any{"certs": []string{cert}})
+	resp3, err := http.Post(srv.URL+"/x509/info", "application/json", bytes.NewReader(buf3))
+	if err != nil {
+		t.Fatalf("post /x509/info: %s", err)
+	}
+	defer resp3.Body.Close()
+
+	var infoResp map[string]any
+	if err := json.NewDecoder(resp3.Body).Decode(&infoResp); err != nil {
+		t.Fatalf("decode: %s", err)
+	}
+	if valid, _ := infoResp["valid"].(bool); !valid {
+		t.Fatalf("expected valid=true from /x509/info, got: %+v", infoResp)
 	}
 }
 

@@ -2,6 +2,7 @@ package caservice
 
 import (
 	"context"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -66,6 +67,49 @@ func TestBootstrapFailureOnAnyURL(t *testing.T) {
 
 	if len(svc.Certs()) != 0 {
 		t.Fatal("expected no certs to be cached after failed bootstrap")
+	}
+}
+
+func TestFetchOnePEMEncoded(t *testing.T) {
+	der, err := os.ReadFile("../testdata/certs/root_test_gost_2022.cer")
+	if err != nil {
+		t.Fatalf("read fixture: %s", err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(pemBytes) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	svc := New([]string{srv.URL}, time.Hour)
+
+	if err := svc.Bootstrap(context.Background()); err != nil {
+		t.Fatalf("Bootstrap with PEM-encoded cert: %s", err)
+	}
+	if len(svc.Certs()) != 1 {
+		t.Fatalf("expected 1 cert, got %d", len(svc.Certs()))
+	}
+}
+
+func TestBackgroundRefreshSuccess(t *testing.T) {
+	root := serveFile(t, "../testdata/certs/root_test_gost_2022.cer")
+	defer root.Close()
+
+	svc := New([]string{root.URL}, 20*time.Millisecond)
+
+	if err := svc.Bootstrap(context.Background()); err != nil {
+		t.Fatalf("Bootstrap: %s", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	svc.StartBackgroundRefresh(ctx)
+	time.Sleep(60 * time.Millisecond)
+
+	if len(svc.Certs()) != 1 {
+		t.Fatalf("expected certs to still be loaded after a successful refresh, got %d", len(svc.Certs()))
 	}
 }
 
