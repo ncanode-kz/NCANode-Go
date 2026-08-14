@@ -45,9 +45,12 @@ type CertificateInfo struct {
 }
 
 // VerificationResponse - общий ответ для *verify/*info эндпоинтов (аналог
-// kz.ncanode.dto.response.VerificationResponse).
+// kz.ncanode.dto.response.VerificationResponse). Signers - указатели, а не
+// значения: при разборе невалидного сертификата в батче (/x509/info)
+// Java кладёт в список null вместо объекта, не прерывая обработку остальных -
+// здесь это тот же nil-элемент, сериализуемый в JSON null.
 type VerificationResponse struct {
 	StatusResponse
-	Valid   bool              `json:"valid"`
-	Signers []CertificateInfo `json:"signers"`
+	Valid   bool               `json:"valid"`
+	Signers []*CertificateInfo `json:"signers"`
 }

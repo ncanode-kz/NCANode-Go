@@ -15,9 +15,10 @@ import (
 	"github.com/ncanode-kz/gokalkan/ckalkan"
 )
 
-// dateLayout - формат даты, который Jackson/Java по умолчанию использует для
-// java.util.Date: миллисекунды + смещение с двоеточием, в UTC.
-const dateLayout = "2006-01-02T15:04:05.000Z07:00"
+// DateLayout - формат даты, который Jackson/Java по умолчанию использует для
+// java.util.Date: миллисекунды + смещение с двоеточием, в UTC ("+00:00" -
+// не "Z"; сверено с реальным ответом живого NCANode).
+const DateLayout = "2006-01-02T15:04:05.000-07:00"
 
 // Build собирает dto.CertificateInfo из PEM-сертификата. checkOCSP/checkCRL -
 // запрошенные клиентом проверки отозванности (см. dto.VerifyRequest).
@@ -147,8 +148,8 @@ func minimalInfoFromGoX509(certPEM string) *gokalkan.CertificateInfo {
 func toDTO(info *gokalkan.CertificateInfo, surName string) dto.CertificateInfo {
 	out := dto.CertificateInfo{
 		Valid:        info.Valid,
-		NotBefore:    info.NotBefore.UTC().Format(dateLayout),
-		NotAfter:     info.NotAfter.UTC().Format(dateLayout),
+		NotBefore:    info.NotBefore.UTC().Format(DateLayout),
+		NotAfter:     info.NotAfter.UTC().Format(DateLayout),
 		KeyUsage:     string(info.KeyUsage),
 		SerialNumber: info.SerialNumber,
 		SignAlg:      shortSignAlg(info.SignAlg),

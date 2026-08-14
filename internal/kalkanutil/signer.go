@@ -1,0 +1,61 @@
+// Package kalkanutil - мелкие переиспользуемые операции над gokalkan.Client,
+// общие для нескольких service/* пакетов.
+package kalkanutil
+
+import (
+	"encoding/base64"
+	"encoding/pem"
+	"fmt"
+	"strings"
+
+	"github.com/ncanode-kz/gokalkan"
+)
+
+// LoadSigner декодирует base64 PKCS12, загружает его в cli как текущий ключ
+// и возвращает PEM-сертификат подписанта.
+//
+// keyAlias из SignerRequest пока не используется: gokalkan.LoadKeyStoreFromBytes
+// всегда загружает хранилище с пустым (дефолтным) алиасом - выбор конкретного
+// алиаса в PKCS12 с несколькими ключами не поддержан ни на уровне gokalkan,
+// ни здесь. Для типичного PKCS12 с одним ключом (основной случай использования)
+// это не имеет значения.
+func LoadSigner(cli *gokalkan.Client, keyB64, password string) (certPEM string, err error) {
+	key, err := base64.StdEncoding.DecodeString(keyB64)
+	if err != nil {
+		return "", fmt.Errorf("decode key: %w", err)
+	}
+
+	if err := cli.LoadKeyStoreFromBytes(key, password); err != nil {
+		return "", err
+	}
+
+	return cli.X509ExportCertificateFromStore("")
+}
+
+// PEMFromDER оборачивает сырые DER-байты сертификата в PEM - формат, который
+// принимают native-вызовы через gokalkan (см. также DERFromPEM).
+func PEMFromDER(der []byte) string {
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+// DERFromPEMOrDER возвращает сырые DER-байты, принимая на вход как PEM, так
+// и уже "голый" DER (некоторые нативные вызовы, например
+// X509ExportCertificateFromStore, отдают PEM; входные данные из запросов
+// клиентов Java обычно приходят как base64(DER) без PEM-обёртки).
+func DERFromPEMOrDER(data []byte) []byte {
+	if block, _ := pem.Decode(data); block != nil {
+		return block.Bytes
+	}
+	return data
+}
+
+// StripWhitespace убирает любые пробельные символы - Java перед декодированием
+// base64 сертификатов из запроса делает certBase64.replaceAll("\\s", "").
+func StripWhitespace(s string) string {
+	return strings.Map(func(r rune) rune {
+		if strings.ContainsRune(" \t\r\n", r) {
+			return -1
+		}
+		return r
+	}, s)
+}

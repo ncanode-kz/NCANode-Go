@@ -10,12 +10,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ncanode-kz/NCANode-Go/internal/app"
 	"github.com/ncanode-kz/NCANode-Go/internal/caservice"
 	"github.com/ncanode-kz/NCANode-Go/internal/config"
 	"github.com/ncanode-kz/NCANode-Go/internal/crlservice"
 	"github.com/ncanode-kz/NCANode-Go/internal/httpapi"
 	"github.com/ncanode-kz/NCANode-Go/internal/ocspservice"
-	"github.com/ncanode-kz/gokalkan"
+	"github.com/ncanode-kz/NCANode-Go/internal/service/cms"
+	"github.com/ncanode-kz/NCANode-Go/internal/service/jwt"
+	"github.com/ncanode-kz/NCANode-Go/internal/service/pkcs12"
+	x509svc "github.com/ncanode-kz/NCANode-Go/internal/service/x509"
 )
 
 func main() {
@@ -47,19 +51,19 @@ func main() {
 
 	ocsp := ocspservice.New(cfg.OCSPURL)
 
-	sharedClient, err := gokalkan.NewClient(
-		gokalkan.WithTSP(cfg.TSP.URL),
-		gokalkan.WithOCSP(ocsp.URL()),
-		gokalkan.WithCerts(ca.Certs()),
-	)
+	a, err := app.New(cfg, ca, crl, ocsp)
 	if err != nil {
 		slog.Error("failed to initialize KalkanCrypt client", "error", err)
 		os.Exit(1)
 	}
-	defer sharedClient.Close()
+	defer a.Close() //nolint:errcheck
 
 	srv := httpapi.New(cfg.Debug)
 	srv.RegisterHealth()
+	cms.RegisterRoutes(srv, a)
+	x509svc.RegisterRoutes(srv, a)
+	pkcs12.RegisterRoutes(srv, a)
+	jwt.RegisterRoutes(srv, a)
 
 	httpServer := &http.Server{
 		Addr:    ":" + cfg.Port,
