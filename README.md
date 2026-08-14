@@ -66,6 +66,19 @@ go run ./cmd/ncanode
 
 Конфигурация - через переменные окружения `NCANODE_*` (см. `internal/config`), имена и дефолты соответствуют `application.yml` оригинального NCANode.
 
+## API-документация
+
+Swagger UI: `http://localhost:14579/swagger-ui.html`
+Сырая OpenAPI-спека (JSON): `http://localhost:14579/v3/api-docs`
+
+Те же пути, что и у springdoc-openapi в Java-версии. Спека (`internal/openapi/openapi.json`)
+сконвертирована из `openapi.yml` оригинального NCANode - paths/schemas 1:1
+совпадают с Go DTO (`internal/dto`), обрезаны только actuator-эндпоинты,
+которых нет в Go-версии (`/actuator`, `/actuator/health/**`). Swagger UI
+рендерится статичной HTML-страницей, подгружающей `swagger-ui-dist` с CDN
+(jsdelivr) - для полностью офлайн-окружения потребуется завендорить эти
+файлы локально.
+
 ## Тесты
 
 ```sh

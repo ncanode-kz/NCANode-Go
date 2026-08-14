@@ -16,6 +16,7 @@ import (
 	"github.com/ncanode-kz/NCANode-Go/internal/crlservice"
 	"github.com/ncanode-kz/NCANode-Go/internal/httpapi"
 	"github.com/ncanode-kz/NCANode-Go/internal/ocspservice"
+	"github.com/ncanode-kz/NCANode-Go/internal/openapi"
 	"github.com/ncanode-kz/NCANode-Go/internal/service/cms"
 	"github.com/ncanode-kz/NCANode-Go/internal/service/jwt"
 	"github.com/ncanode-kz/NCANode-Go/internal/service/pdf"
@@ -54,6 +55,7 @@ func bootstrapCRL(ctx context.Context, cfg config.Config) *crlservice.Service {
 func newHandler(a *app.App, debug bool) http.Handler {
 	srv := httpapi.New(debug)
 	srv.RegisterHealth()
+	openapi.RegisterRoutes(srv)
 	cms.RegisterRoutes(srv, a)
 	x509svc.RegisterRoutes(srv, a)
 	pkcs12.RegisterRoutes(srv, a)
