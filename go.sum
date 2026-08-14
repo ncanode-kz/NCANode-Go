@@ -13,6 +13,8 @@ github.com/mattetti/filebuffer v1.0.1 h1:gG7pyfnSIZCxdoKq+cPa8T0hhYtD9NxCdI4D7PT
 github.com/mattetti/filebuffer v1.0.1/go.mod h1:YdMURNDOttIiruleeVr6f56OrMc+MydEnTcXwtkxNVs=
 github.com/ncanode-kz/gokalkan v0.0.0-20260814214604-4bbed7577cb9 h1:vx8l3nkc0oRqSPwAA/Y0sQexVCb5PBx3IY2/QKvzNog=
 github.com/ncanode-kz/gokalkan v0.0.0-20260814214604-4bbed7577cb9/go.mod h1:NuJbBYOKqOPgQEsnNPx23TeDF81hapMWTbDFYMOk0v0=
+github.com/ncanode-kz/gokalkan v0.0.0-20260814214604-cf1c6db8ff2e h1:wVg+IRqw8xOz8UwDF/6q2nhbnRa3ZV4l7Qr+UMOH314=
+github.com/ncanode-kz/gokalkan v0.0.0-20260814214604-cf1c6db8ff2e/go.mod h1:NuJbBYOKqOPgQEsnNPx23TeDF81hapMWTbDFYMOk0v0=
 golang.org/x/crypto v0.53.0 h1:QZ4Muo8THX6CizN2vPPd5fBGHyogrdK9fG4wLPFUsto=
 golang.org/x/crypto v0.53.0/go.mod h1:DNLU434OwVakk9PzuwV8w62mAJpRJL3vsgcfp4Qnsio=
 golang.org/x/text v0.38.0 h1:sXmwo9DwP3OK9EZ7PqAdaooSGozfl/3a6/xJcbzPRhE=
