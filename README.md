@@ -11,7 +11,7 @@
 - [x] **Phase A** - фундамент: конфигурация (`NCANODE_*`, 1:1 с `application.yml`), роутер с единым конвертом ошибок, `/actuator/health`, загрузка/кэширование CA-сертификатов (с fail-fast стартом, как в Java), кэширование CRL, сборка `CertificateInfo`.
 - [x] **Phase B** - `/cms/sign`, `/cms/sign/add`, `/cms/verify`, `/cms/extract`, `/x509/info`, `/x509/sign`, `/x509/verify`, `/pkcs12/info`, `/pkcs12/aliases`, `/jwt/encode`, `/jwt/decode`.
 - [x] **Phase C** - `/xml/sign`, `/xml/verify`, `/wsse/sign`, `/wsse/verify`.
-- [ ] **Phase D** - `/pdf/*`
+- [x] **Phase D** - `/pdf/sign`, `/pdf/verify`.
 - [ ] **Phase E** - тестовое покрытие ≥90%
 
 ### Известные ограничения (Phase B)
@@ -36,6 +36,15 @@
   Java, но основаны на эмпирически подтверждённой (не документированной)
   индексации `KC_getCertFromXML` - если нативная библиотека сменит поведение
   между версиями, это может незаметно разойтись.
+
+### Известные ограничения (Phase D)
+
+- `PdfSignerInfo.digestAlgorithm` (OID алгоритма хэширования CMS, отдельно от
+  `signatureAlgorithm`) не заполняется - gokalkan не извлекает это поле из
+  подписи структурно.
+- `contactInfo`/`reason`/`location` в ответе `/pdf/verify` при отсутствии
+  значения опускаются из JSON (`omitempty`), тогда как Java явно пишет
+  `null` - разница в форме, не в семантике для типичных JSON-клиентов.
 
 ### Важная архитектурная особенность
 

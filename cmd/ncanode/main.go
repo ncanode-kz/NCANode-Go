@@ -18,6 +18,7 @@ import (
 	"github.com/ncanode-kz/NCANode-Go/internal/ocspservice"
 	"github.com/ncanode-kz/NCANode-Go/internal/service/cms"
 	"github.com/ncanode-kz/NCANode-Go/internal/service/jwt"
+	"github.com/ncanode-kz/NCANode-Go/internal/service/pdf"
 	"github.com/ncanode-kz/NCANode-Go/internal/service/pkcs12"
 	"github.com/ncanode-kz/NCANode-Go/internal/service/wsse"
 	x509svc "github.com/ncanode-kz/NCANode-Go/internal/service/x509"
@@ -68,6 +69,7 @@ func main() {
 	jwt.RegisterRoutes(srv, a)
 	xmlsvc.RegisterRoutes(srv, a)
 	wsse.RegisterRoutes(srv, a)
+	pdf.RegisterRoutes(srv, a)
 
 	httpServer := &http.Server{
 		Addr:    ":" + cfg.Port,

@@ -2,7 +2,7 @@ module github.com/ncanode-kz/NCANode-Go
 
 go 1.25.0
 
-require github.com/ncanode-kz/gokalkan v0.0.0-20260814193417-d5d1ba5f90c7
+require github.com/ncanode-kz/gokalkan v0.0.0-20260814214604-4bbed7577cb9
 
 require (
 	github.com/beevik/etree v1.7.0 // indirect
