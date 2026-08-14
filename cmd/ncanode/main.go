@@ -19,7 +19,9 @@ import (
 	"github.com/ncanode-kz/NCANode-Go/internal/service/cms"
 	"github.com/ncanode-kz/NCANode-Go/internal/service/jwt"
 	"github.com/ncanode-kz/NCANode-Go/internal/service/pkcs12"
+	"github.com/ncanode-kz/NCANode-Go/internal/service/wsse"
 	x509svc "github.com/ncanode-kz/NCANode-Go/internal/service/x509"
+	xmlsvc "github.com/ncanode-kz/NCANode-Go/internal/service/xml"
 )
 
 func main() {
@@ -64,6 +66,8 @@ func main() {
 	x509svc.RegisterRoutes(srv, a)
 	pkcs12.RegisterRoutes(srv, a)
 	jwt.RegisterRoutes(srv, a)
+	xmlsvc.RegisterRoutes(srv, a)
+	wsse.RegisterRoutes(srv, a)
 
 	httpServer := &http.Server{
 		Addr:    ":" + cfg.Port,

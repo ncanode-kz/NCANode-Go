@@ -50,4 +50,7 @@ type SignerRequest struct {
 	Key      string `json:"key"`
 	Password string `json:"password"`
 	KeyAlias string `json:"keyAlias"`
+	// ReferenceURI используется только для XML-подписи (Reference URI="#id") -
+	// см. kz.ncanode.service.XmlService.
+	ReferenceURI string `json:"referenceUri"`
 }

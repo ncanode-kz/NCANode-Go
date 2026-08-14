@@ -38,6 +38,15 @@ func PEMFromDER(der []byte) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
 
+// PEMFromBase64Body оборачивает в PEM-заголовки base64-текст сертификата,
+// уже перенесённый (с переводами строк), но без "-----BEGIN/END-----" -
+// именно в таком виде отдаёт сертификат ckalkan.GetCertFromXML, в отличие от
+// большинства других вызовов (X509ExportCertificateFromStore и т.п.),
+// возвращающих готовый PEM или сырой DER.
+func PEMFromBase64Body(body []byte) string {
+	return "-----BEGIN CERTIFICATE-----\n" + string(body) + "\n-----END CERTIFICATE-----\n"
+}
+
 // DERFromPEMOrDER возвращает сырые DER-байты, принимая на вход как PEM, так
 // и уже "голый" DER (некоторые нативные вызовы, например
 // X509ExportCertificateFromStore, отдают PEM; входные данные из запросов

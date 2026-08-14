@@ -10,7 +10,7 @@
 
 - [x] **Phase A** - фундамент: конфигурация (`NCANODE_*`, 1:1 с `application.yml`), роутер с единым конвертом ошибок, `/actuator/health`, загрузка/кэширование CA-сертификатов (с fail-fast стартом, как в Java), кэширование CRL, сборка `CertificateInfo`.
 - [x] **Phase B** - `/cms/sign`, `/cms/sign/add`, `/cms/verify`, `/cms/extract`, `/x509/info`, `/x509/sign`, `/x509/verify`, `/pkcs12/info`, `/pkcs12/aliases`, `/jwt/encode`, `/jwt/decode`.
-- [ ] **Phase C** - `/xml/*`, `/wsse/*`
+- [x] **Phase C** - `/xml/sign`, `/xml/verify`, `/wsse/sign`, `/wsse/verify`.
 - [ ] **Phase D** - `/pdf/*`
 - [ ] **Phase E** - тестовое покрытие ≥90%
 
@@ -28,6 +28,14 @@
 - `SignerRequest.keyAlias` пока не используется - см. предыдущий пункт.
 - `revocationTime` в `Revocation` всегда `null` - gokalkan сообщает только
   сам факт отзыва, не точное время.
+
+### Известные ограничения (Phase C)
+
+- Порядок подписантов в ответе `/xml/verify` (от последней подписи к первой)
+  и single-signer-only поведение `/wsse/verify` воспроизведены и сверены с
+  Java, но основаны на эмпирически подтверждённой (не документированной)
+  индексации `KC_getCertFromXML` - если нативная библиотека сменит поведение
+  между версиями, это может незаметно разойтись.
 
 ### Важная архитектурная особенность
 
