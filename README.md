@@ -4,6 +4,9 @@
 
 ---
 
+![CI](https://github.com/ncanode-kz/NCANode-Go/actions/workflows/ci.yml/badge.svg)
+[![Release](https://img.shields.io/github/v/release/ncanode-kz/NCANode-Go)](https://github.com/ncanode-kz/NCANode-Go/releases)
+[![codecov](https://codecov.io/gh/ncanode-kz/NCANode-Go/graph/badge.svg)](https://codecov.io/gh/ncanode-kz/NCANode-Go)
 ![License:MIT](https://img.shields.io/badge/license-MIT-green.svg)
 
 ---

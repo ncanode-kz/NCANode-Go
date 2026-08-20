@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.13.1
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build ./...
+      # KalkanCrypt (libkalkancryptwr-64.so) - закрытый нативный SDK от
+      # pki.gov.kz, распространять его публично нельзя (см. AGENTS.md). CI
+      # тянет уже подготовленную копию по приватному URL - секрет
+      # замаскирован в логах через add-mask, сама переменная нигде, кроме
+      # памяти шага, не сохраняется.
+      - name: Install KalkanCrypt native library
+        env:
+          KALKAN_SO_URL: ${{ secrets.KALKAN_SO_URL }}
+        run: |
+          echo "::add-mask::$KALKAN_SO_URL"
+          curl -sSfL -o /tmp/libkalkancryptwr-64.so "$KALKAN_SO_URL"
+          sudo mv /tmp/libkalkancryptwr-64.so /usr/lib/libkalkancryptwr-64.so
+          sudo ldconfig
+      - name: Test with coverage
+        run: go test -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+      - uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

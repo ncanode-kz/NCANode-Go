@@ -1,0 +1,39 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Собирается без libkalkancryptwr-64.so - библиотека грузится через
+      # dlopen в рантайме (см. gokalkan/ckalkan), а не линкуется на этапе
+      # сборки, так что бинарь под x86_64 полностью собирается без SDK.
+      - name: Build linux/amd64 binary
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 1
+        run: |
+          mkdir -p dist
+          go build -o dist/ncanode ./cmd/ncanode
+      - name: Package release asset
+        run: |
+          cp README.md LICENSE dist/
+          tar -C dist -czf ncanode-${GITHUB_REF_NAME}-linux-amd64.tar.gz ncanode README.md LICENSE
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: NCANode-Go ${{ github.ref_name }}
+          generate_release_notes: true
+          files: ncanode-${{ github.ref_name }}-linux-amd64.tar.gz
