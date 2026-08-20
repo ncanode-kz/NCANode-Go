@@ -36,4 +36,5 @@ jobs:
         with:
           name: NCANode-Go ${{ github.ref_name }}
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: ncanode-${{ github.ref_name }}-linux-amd64.tar.gz
