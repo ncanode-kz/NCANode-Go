@@ -4,12 +4,8 @@ go 1.25.0
 
 require (
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
-	github.com/ncanode-kz/gokalkan v0.0.0-20260814214604-cf1c6db8ff2e
+	github.com/ncanode-kz/gokalkan v0.0.0-20260820180205-f5135240ca6b
 )
-
-// Локальные правки gokalkan (см. AGENTS.md/README - алиасы PKCS12,
-// revocationTime) ещё не опубликованы отдельным тегом.
-replace github.com/ncanode-kz/gokalkan => ../gokalkan
 
 require (
 	github.com/beevik/etree v1.7.0 // indirect
