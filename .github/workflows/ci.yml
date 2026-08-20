@@ -41,7 +41,7 @@ jobs:
         run: |
           echo "::add-mask::$KALKAN_SO_URL"
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libpcsclite1
+          sudo apt-get install -y --no-install-recommends libpcsclite1 libltdl7 zlib1g
           curl -sSfL -o /tmp/libkalkancryptwr-64.so "$KALKAN_SO_URL"
           sudo mv /tmp/libkalkancryptwr-64.so /usr/lib/libkalkancryptwr-64.so
           sudo ldconfig

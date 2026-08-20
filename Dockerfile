@@ -24,7 +24,7 @@ RUN --mount=type=secret,id=kalkan_so_url \
 
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget libpcsclite1 \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget libpcsclite1 libltdl7 zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
