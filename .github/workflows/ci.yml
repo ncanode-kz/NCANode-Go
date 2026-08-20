@@ -45,6 +45,16 @@ jobs:
           curl -sSfL -o /tmp/libkalkancryptwr-64.so "$KALKAN_SO_URL"
           sudo mv /tmp/libkalkancryptwr-64.so /usr/lib/libkalkancryptwr-64.so
           sudo ldconfig
+      - name: DEBUG env info
+        run: |
+          cat /etc/os-release
+          ldd --version | head -1
+          openssl version
+          date
+          date -u
+          cat /etc/timezone 2>&1 || true
+          ldd /usr/lib/libkalkancryptwr-64.so
+          sha256sum /usr/lib/libkalkancryptwr-64.so
       - name: Test with coverage
         env:
           TZ: UTC
