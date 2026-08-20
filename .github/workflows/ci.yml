@@ -45,16 +45,12 @@ jobs:
           curl -sSfL -o /tmp/libkalkancryptwr-64.so "$KALKAN_SO_URL"
           sudo mv /tmp/libkalkancryptwr-64.so /usr/lib/libkalkancryptwr-64.so
           sudo ldconfig
-      - name: DEBUG env info
+      - name: DEBUG install test CA certs system-wide
         run: |
-          cat /etc/os-release
-          ldd --version | head -1
-          openssl version
-          date
-          date -u
-          cat /etc/timezone 2>&1 || true
-          ldd /usr/lib/libkalkancryptwr-64.so
-          sha256sum /usr/lib/libkalkancryptwr-64.so
+          openssl x509 -inform DER -in internal/testdata/certs/root_test_gost_2022.cer -out /tmp/root_test_gost_2022.crt
+          openssl x509 -inform DER -in internal/testdata/certs/nca_gost2022_test.cer -out /tmp/nca_gost2022_test.crt
+          sudo cp /tmp/root_test_gost_2022.crt /tmp/nca_gost2022_test.crt /usr/local/share/ca-certificates/
+          sudo update-ca-certificates
       - name: Test with coverage
         env:
           TZ: UTC
