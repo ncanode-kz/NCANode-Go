@@ -21,12 +21,16 @@ type CertIssuer struct {
 }
 
 // Revocation - результат одной проверки отозванности (аналог
-// kz.ncanode.dto.certificate.CertificateRevocationStatus).
+// kz.ncanode.dto.certificate.CertificateRevocationStatus). У Java-класса нет
+// @JsonInclude(NON_NULL) (в отличие от родительского CertificateInfo - оно не
+// наследуется на вложенные объекты), поэтому reason - указатель без
+// omitempty, а не string с omitempty: Java может явно писать null (для CRL,
+// когда сертификат не отозван - см. certservice.reasonFor).
 type Revocation struct {
 	Revoked        bool    `json:"revoked"`
 	By             string  `json:"by"`
 	RevocationTime *string `json:"revocationTime"`
-	Reason         string  `json:"reason,omitempty"`
+	Reason         *string `json:"reason"`
 }
 
 type CertificateInfo struct {

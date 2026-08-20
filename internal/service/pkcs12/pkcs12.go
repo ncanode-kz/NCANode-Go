@@ -37,7 +37,7 @@ func info(a *app.App, req dto.Pkcs12InfoRequest) (dto.VerificationResponse, erro
 	signers := make([]*dto.CertificateInfo, 0, len(req.Keys))
 
 	for i, key := range req.Keys {
-		certPEM, err := kalkanutil.LoadSigner(a.Shared, key.Key, key.Password)
+		certPEM, err := kalkanutil.LoadSigner(a.Shared, key.Key, key.Password, key.KeyAlias)
 		if err != nil {
 			return dto.VerificationResponse{}, httpapi.ServerError(fmt.Sprintf("failed to load key #%d", i), err)
 		}
@@ -57,13 +57,14 @@ func info(a *app.App, req dto.Pkcs12InfoRequest) (dto.VerificationResponse, erro
 	return dto.VerificationResponse{StatusResponse: dto.OK(), Valid: valid, Signers: signers}, nil
 }
 
-// aliases реализует /pkcs12/aliases. Известное упрощение: gokalkan/нативная
-// библиотека не предоставляют способ перечислить ВСЕ алиасы внутри одного
-// PKCS12 (в отличие от Java KeyStore.aliases()) - загрузка всегда идёт с
-// пустым (дефолтным) алиасом, и это единственный алиас, который мы можем
-// сообщить. Для типичного PKCS12 с одним ключом (основной случай в
-// экосистеме pki.gov.kz) результат корректен по сути, но не является полным
-// аналогом Java для мульти-ключевых хранилищ.
+// aliases реализует /pkcs12/aliases через KC_GetCertificatesList (см.
+// gokalkan.Client.ListCertificateAliases). Эмпирически подтверждено (см.
+// README): для хранилища, загруженного из PKCS12, эта функция нативной
+// библиотеки возвращает ошибку KCR_NOTOKENFOUND ("no token found") - она
+// работает только для аппаратных токенов (KAZTOKEN/eToken/JaCarta и т.п.), с
+// которыми и была задумана (см. пример в SDK, test.cpp). Для PKCS12 (основной
+// случай в экосистеме pki.gov.kz) поэтому используется тот же фолбэк, что и
+// раньше - единственный дефолтный алиас "".
 func aliases(a *app.App, req dto.Pkcs12InfoRequest) (dto.Pkcs12AliasesResponse, error) {
 	if len(req.Keys) == 0 {
 		return dto.Pkcs12AliasesResponse{}, httpapi.ClientError("keys must not be empty", nil)
@@ -75,11 +76,18 @@ func aliases(a *app.App, req dto.Pkcs12InfoRequest) (dto.Pkcs12AliasesResponse, 
 	result := make([][]string, 0, len(req.Keys))
 
 	for i, key := range req.Keys {
-		if _, err := kalkanutil.LoadSigner(a.Shared, key.Key, key.Password); err != nil {
+		if _, err := kalkanutil.LoadSigner(a.Shared, key.Key, key.Password, key.KeyAlias); err != nil {
 			return dto.Pkcs12AliasesResponse{}, httpapi.ServerError(fmt.Sprintf("failed to load key #%d", i), err)
 		}
 
-		result = append(result, []string{""})
+		keyAliases, err := a.Shared.ListCertificateAliases()
+		if err != nil || len(keyAliases) == 0 {
+			// KC_GetCertificatesList недоступна для PKCS12 (см. коммент выше) -
+			// тот же дефолтный алиас "", что и раньше.
+			keyAliases = []string{""}
+		}
+
+		result = append(result, keyAliases)
 	}
 
 	return dto.Pkcs12AliasesResponse{StatusResponse: dto.OK(), Aliases: result}, nil

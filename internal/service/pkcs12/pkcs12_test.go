@@ -84,6 +84,11 @@ func TestAliases(t *testing.T) {
 	if len(resp.Aliases) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(resp.Aliases))
 	}
+	// KC_GetCertificatesList возвращает KCR_NOTOKENFOUND для PKCS12-хранилищ
+	// (см. коммент у aliases в pkcs12.go) - используется фолбэк [""].
+	if len(resp.Aliases[0]) != 1 || resp.Aliases[0][0] != "" {
+		t.Errorf("expected fallback alias [\"\"], got %q", resp.Aliases[0])
+	}
 }
 
 func TestAliasesEmptyKeys(t *testing.T) {

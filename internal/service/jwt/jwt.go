@@ -37,7 +37,7 @@ func encode(a *app.App, req dto.JwtEncodeRequest) (dto.JwtEncodeResponse, error)
 	a.SigningMu.Lock()
 	defer a.SigningMu.Unlock()
 
-	if _, err := kalkanutil.LoadSigner(a.Shared, req.Key, req.Password); err != nil {
+	if _, err := kalkanutil.LoadSigner(a.Shared, req.Key, req.Password, req.KeyAlias); err != nil {
 		return dto.JwtEncodeResponse{}, httpapi.ServerError("failed to load signer", err)
 	}
 

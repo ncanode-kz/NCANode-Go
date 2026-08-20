@@ -28,16 +28,25 @@ type PdfVerifyRequest struct {
 	PDF string `json:"pdf"`
 }
 
-// PdfSignerInfo - аналог kz.ncanode.dto.pdf.PdfSignerInfo.
+// PdfSignerInfo - аналог kz.ncanode.dto.pdf.PdfSignerInfo. У Java-класса нет
+// @JsonInclude(NON_NULL) (в отличие от CertificateInfo/CertificateSubject),
+// поэтому он использует глобальный дефолт Spring Boot Jackson - ALWAYS
+// (null-поля пишутся явно как "поле": null).
+//
+// Reason/Location/ContactInfo - указатели без omitempty: gokalkan различает
+// отсутствующий ключ подписи (nil, как null у Java PDFBox) и присутствующий,
+// но пустой (указатель на ""). SignatureAlgorithm/DigestAlgorithm у Java
+// всегда непустая строка (для digestAlgorithm - с фолбэком "unknown", см.
+// PdfService.java), поэтому остаются обычным string.
 type PdfSignerInfo struct {
 	Valid              bool             `json:"valid"`
-	Reason             string           `json:"reason,omitempty"`
-	Location           string           `json:"location,omitempty"`
-	ContactInfo        string           `json:"contactInfo,omitempty"`
+	Reason             *string          `json:"reason"`
+	Location           *string          `json:"location"`
+	ContactInfo        *string          `json:"contactInfo"`
 	SignDate           *string          `json:"signDate"`
 	Certificate        *CertificateInfo `json:"certificate"`
-	SignatureAlgorithm string           `json:"signatureAlgorithm,omitempty"`
-	DigestAlgorithm    string           `json:"digestAlgorithm,omitempty"`
+	SignatureAlgorithm string           `json:"signatureAlgorithm"`
+	DigestAlgorithm    string           `json:"digestAlgorithm"`
 }
 
 // PdfVerificationResponse - аналог kz.ncanode.dto.response.PdfVerificationResponse.

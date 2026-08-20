@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/ncanode-kz/NCANode-Go/internal/crlservice"
@@ -31,10 +32,12 @@ const DateLayout = "2006-01-02T15:04:05.000-07:00"
 // возможности перехватить сегфолт, поэтому проверка self-signed идёт первым
 // делом на чистом Go (crypto/x509), до какого-либо обращения к KalkanCrypt.
 func Build(cli *gokalkan.Client, crl *crlservice.Service, certPEM string, checkOCSP, checkCRL bool) (dto.CertificateInfo, error) {
-	selfSigned, parseErr := isSelfSigned(certPEM)
+	parsed, parseErr := parseCertPEM(certPEM)
 	if parseErr != nil {
 		return dto.CertificateInfo{}, fmt.Errorf("parse certificate: %w", parseErr)
 	}
+
+	selfSigned := string(parsed.RawIssuer) == string(parsed.RawSubject)
 
 	base, err := cli.GetCertificateInfo(certPEM, checkOCSP && !selfSigned, "")
 	if err != nil {
@@ -49,7 +52,7 @@ func Build(cli *gokalkan.Client, crl *crlservice.Service, certPEM string, checkO
 		// ошибкой. Раз self-signed в любом случае никогда не valid, в этом
 		// случае просто собираем минимальную информацию средствами
 		// стандартного crypto/x509, не полагаясь на KalkanCrypt.
-		base = minimalInfoFromGoX509(certPEM)
+		base = minimalInfoFromGoX509(parsed)
 	}
 
 	if selfSigned {
@@ -57,15 +60,21 @@ func Build(cli *gokalkan.Client, crl *crlservice.Service, certPEM string, checkO
 	}
 
 	if checkCRL && !selfSigned {
-		revoked, checked := checkCRLPaths(cli, crl, certPEM)
+		revoked, checked, paths := checkCRLPaths(cli, crl, certPEM)
 		if checked {
-			base.Revocations = append(base.Revocations, gokalkan.Revocation{
-				Type:    gokalkan.RevocationTypeCRL,
-				Revoked: revoked,
-			})
+			rev := gokalkan.Revocation{Type: gokalkan.RevocationTypeCRL, Revoked: revoked}
 			if revoked {
+				// Сам факт отзыва уже подтверждён нативной проверкой выше -
+				// структурный разбор здесь только чтобы достать точные
+				// revocationTime/reason (см. crlentry.go), которых нативная
+				// библиотека в текстовом отчёте для CRL не даёт.
+				if entry, found := findCRLEntryInPaths(paths, parsed.SerialNumber); found {
+					rev.RevokedAt = entry.RevokedAt
+					rev.Reason = entry.Reason
+				}
 				base.Valid = false
 			}
+			base.Revocations = append(base.Revocations, rev)
 		}
 	}
 
@@ -78,12 +87,14 @@ func Build(cli *gokalkan.Client, crl *crlservice.Service, certPEM string, checkO
 // delta, потом full - как в Java CrlService: свежие отзывы важнее), и
 // возвращает revoked=true при первом же совпадении. checked=false, если ни
 // один CRL-файл не удалось использовать (например кэш ещё не наполнен).
-func checkCRLPaths(cli *gokalkan.Client, crl *crlservice.Service, certPEM string) (revoked, checked bool) {
+// paths - список путей, по которым шла проверка (для последующего
+// структурного поиска точной записи, см. findCRLEntryInPaths).
+func checkCRLPaths(cli *gokalkan.Client, crl *crlservice.Service, certPEM string) (revoked, checked bool, paths []string) {
 	if crl == nil {
-		return false, false
+		return false, false, nil
 	}
 
-	paths := append(append([]string{}, crl.DeltaPaths()...), crl.FullPaths()...)
+	paths = append(append([]string{}, crl.DeltaPaths()...), crl.FullPaths()...)
 
 	for _, path := range paths {
 		_, err := cli.ValidateCertCRL(certPEM, path)
@@ -93,43 +104,45 @@ func checkCRLPaths(cli *gokalkan.Client, crl *crlservice.Service, certPEM string
 		}
 
 		if code, ok := ckalkan.GetErrorCode(err); ok && code == ckalkan.ErrorCodeCertStatusRevoked {
-			return true, true
+			return true, true, paths
 		}
 		// прочие ошибки (например сертификат не относится к этому CRL) -
 		// игнорируем и пробуем следующий файл.
 	}
 
-	return false, checked
+	return false, checked, paths
 }
 
-func isSelfSigned(certPEM string) (bool, error) {
+// findCRLEntryInPaths ищет структурную запись об отзыве (см. crlentry.go) по
+// всем закэшированным CRL-файлам - независимо от того, в каком из них её
+// нашла нативная проверка (checkCRLPaths это не сообщает).
+func findCRLEntryInPaths(paths []string, serial *big.Int) (crlEntry, bool) {
+	for _, path := range paths {
+		if entry, found := findCRLEntry(path, serial); found {
+			return entry, true
+		}
+	}
+
+	return crlEntry{}, false
+}
+
+// parseCertPEM разбирает PEM (или голый DER, на всякий случай - как и раньше)
+// стандартной библиотекой - используется и для определения self-signed, и
+// как запасной путь при ошибке нативного разбора (см. Build), и для серийного
+// номера при структурном поиске записи в CRL (см. findCRLEntryInPaths).
+func parseCertPEM(certPEM string) (*x509.Certificate, error) {
 	der := []byte(certPEM)
 	if block, _ := pem.Decode([]byte(certPEM)); block != nil {
 		der = block.Bytes
 	}
 
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return false, err
-	}
-
-	return string(cert.RawIssuer) == string(cert.RawSubject), nil
+	return x509.ParseCertificate(der)
 }
 
 // minimalInfoFromGoX509 - запасной путь для сертификатов, форма которых не
 // укладывается в предположения gokalkan.GetCertificateInfo (см. Build) -
 // достаёт то немногое, что нужно для ответа, без обращения к KalkanCrypt.
-func minimalInfoFromGoX509(certPEM string) *gokalkan.CertificateInfo {
-	der := []byte(certPEM)
-	if block, _ := pem.Decode([]byte(certPEM)); block != nil {
-		der = block.Bytes
-	}
-
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return &gokalkan.CertificateInfo{}
-	}
-
+func minimalInfoFromGoX509(cert *x509.Certificate) *gokalkan.CertificateInfo {
 	return &gokalkan.CertificateInfo{
 		NotBefore:    cert.NotBefore,
 		NotAfter:     cert.NotAfter,
@@ -178,13 +191,9 @@ func toDTO(info *gokalkan.CertificateInfo, surName string) dto.CertificateInfo {
 	out.Revocations = make([]dto.Revocation, 0, len(info.Revocations))
 	for _, r := range info.Revocations {
 		out.Revocations = append(out.Revocations, dto.Revocation{
-			Revoked: r.Revoked,
-			By:      string(r.Type),
-			// RevocationTime: gokalkan сейчас не извлекает точное время
-			// отзыва из нативного ответа OCSP/CRL, только сам факт - в
-			// отличие от Java, которая парсит его из ответа. Известное
-			// упрощение, см. README.
-			RevocationTime: nil,
+			Revoked:        r.Revoked,
+			By:             string(r.Type),
+			RevocationTime: revocationTimeFor(r),
 			Reason:         reasonFor(r),
 		})
 	}
@@ -192,17 +201,42 @@ func toDTO(info *gokalkan.CertificateInfo, surName string) dto.CertificateInfo {
 	return out
 }
 
-// reasonFor - для OCSP-проверки непросроченного сертификата Java пишет "OK"
-// даже когда revoked=false; для остальных случаев причина - текст ошибки
-// нативной библиотеки (если есть).
-func reasonFor(r gokalkan.Revocation) string {
-	if !r.Revoked {
-		return "OK"
+// revocationTimeFor форматирует точное время отзыва (см. gokalkan.Revocation.RevokedAt
+// для OCSP, findCRLEntryInPaths для CRL) - nil, если сертификат не отозван
+// или время не удалось извлечь.
+func revocationTimeFor(r gokalkan.Revocation) *string {
+	if !r.Revoked || r.RevokedAt.IsZero() {
+		return nil
 	}
-	if r.Reason != "" {
-		return r.Reason
+
+	formatted := r.RevokedAt.UTC().Format(DateLayout)
+
+	return &formatted
+}
+
+// reasonFor - причина отзыва в терминах Java (см. OcspStatus/CrlStatus в
+// NCANode):
+//
+//   - OCSP: Java (OcspService.processOcspResponse) безусловно пишет "OK" в
+//     message - и для отозванного, и для активного статуса; сам
+//     revocationReason (CRLReason) для OCSP в JSON не попадает вообще.
+//   - CRL, не отозван: Java (CrlService.verify) в этой ветке вообще не
+//     вызывает .reason(...) - в JSON явный null (см. dto.Revocation).
+//   - CRL, отозван: r.Reason - уже посчитанное имя причины в стиле
+//     java.security.cert.CRLReason (см. crlReasonNames), "" если расширение
+//     reasonCode в записи CRL отсутствует - тот же случай, что у Java даёт
+//     Optional.ofNullable(...).orElse("").
+func reasonFor(r gokalkan.Revocation) *string {
+	switch {
+	case r.Type == gokalkan.RevocationTypeOCSP:
+		reason := "OK"
+		return &reason
+	case r.Type == gokalkan.RevocationTypeCRL && !r.Revoked:
+		return nil
+	default:
+		reason := r.Reason
+		return &reason
 	}
-	return "REVOKED"
 }
 
 // reorderKeyUser ставит специфичную роль перед общим типом (ORGANIZATION),
@@ -215,13 +249,48 @@ func reorderKeyUser(keyUser []string) []string {
 }
 
 // signAlgByOID - соответствие OID алгоритма подписи короткому имени, как его
-// показывает Java (KalkanUtil). Подтверждено сверкой с живым NCANode только
-// для ECGOST3410-2015-512 (единственный алгоритм, встретившийся в тестовых
-// сертификатах на момент написания) - остальные записи отсутствуют, при
-// неизвестном OID возвращается сырой ответ нативной библиотеки как есть.
+// показывает Java (java.security.cert.X509Certificate.getSigAlgName(), см.
+// CertificateWrapper.java). Это имя резолвит не сама Java, а JCE-провайдер
+// KalkanCrypt (kz.gov.pki.kalkan.jce.provider.KalkanProvider) через записи
+// "Alg.Alias.Signature.<OID>" в своей таблице алгоритмов.
+//
+// Записи ниже сверены не эмпирически с живым Java-сервисом, а декомпиляцией
+// байткода того же provider-jar, который тянет эталонный NCANode
+// (knca_provider_jce_kalkan-0.7.5.jar, см. addSignatureAlgorithm/
+// KalkanProvider.<init> и *ObjectIdentifiers.<clinit> в KalkanProvider.class,
+// PKCSObjectIdentifiers.class, OIWObjectIdentifiers.class,
+// CryptoProObjectIdentifiers.class, KNCAObjectIdentifiers.class) - то есть
+// это тот же источник истины, что использует сам Java в рантайме, просто
+// прочитанный статически. Единственная запись, подтверждённая вживую через
+// сверку с работающим Java NCANode - ECGOST3410-2015-512.
 //
 //nolint:gochecknoglobals
 var signAlgByOID = map[string]string{
+	// RSA (PKCS#1) - kz/gov/pki/kalkan/asn1/pkcs/PKCSObjectIdentifiers.class.
+	"1.2.840.113549.1.1.2":  "MD2WithRSAEncryption",
+	"1.2.840.113549.1.1.3":  "MD4WithRSAEncryption",
+	"1.2.840.113549.1.1.4":  "MD5WithRSAEncryption",
+	"1.2.840.113549.1.1.5":  "SHA1WithRSAEncryption",
+	"1.2.840.113549.1.1.11": "SHA256WithRSAEncryption",
+	"1.2.840.113549.1.1.12": "SHA384WithRSAEncryption",
+	"1.2.840.113549.1.1.13": "SHA512WithRSAEncryption",
+	"1.2.840.113549.1.1.14": "SHA224WithRSAEncryption",
+	// SHA1WithRSA (OIW-алиас того же алгоритма) -
+	// kz/gov/pki/kalkan/asn1/oiw/OIWObjectIdentifiers.class.
+	"1.3.14.3.2.29": "SHA1WithRSAEncryption",
+	// ГОСТ Р 34.10-94/2001 (CryptoPro) -
+	// kz/gov/pki/kalkan/asn1/cryptopro/CryptoProObjectIdentifiers.class.
+	"1.2.643.2.2.4": "GOST3410",
+	"1.2.643.2.2.3": "ECGOST3410",
+	// ГОСТ 34.310-2004 (KZ, kalkan-специфичный OID CryptoPro-семейства) -
+	// kz/gov/pki/kalkan/asn1/cryptopro/CryptoProObjectIdentifiers.class.
+	"1.3.6.1.4.1.6801.1.2.2": "ECGOST34310",
+	// ГОСТ 34.310-2004 (KZ, KNCA OID) -
+	// kz/gov/pki/kalkan/asn1/knca/KNCAObjectIdentifiers.class.
+	"1.2.398.3.10.1.1.1.2": "ECGOST34310",
+	// ГОСТ Р 34.10-2015 (KZ) -
+	// kz/gov/pki/kalkan/asn1/knca/KNCAObjectIdentifiers.class.
+	"1.2.398.3.10.1.1.2.3.1": "ECGOST3410-2015-256",
 	"1.2.398.3.10.1.1.2.3.2": "ECGOST3410-2015-512",
 }
 

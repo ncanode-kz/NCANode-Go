@@ -37,7 +37,7 @@ func sign(a *app.App, req dto.XmlSignRequest) (dto.XmlSignResponse, error) {
 	xmlData := req.XML
 
 	for i, signer := range req.Signers {
-		if _, err := kalkanutil.LoadSigner(a.Shared, signer.Key, signer.Password); err != nil {
+		if _, err := kalkanutil.LoadSigner(a.Shared, signer.Key, signer.Password, signer.KeyAlias); err != nil {
 			return dto.XmlSignResponse{}, httpapi.ServerError(fmt.Sprintf("failed to load signer #%d", i), err)
 		}
 

@@ -12,20 +12,17 @@ import (
 )
 
 // LoadSigner декодирует base64 PKCS12, загружает его в cli как текущий ключ
-// и возвращает PEM-сертификат подписанта.
-//
-// keyAlias из SignerRequest пока не используется: gokalkan.LoadKeyStoreFromBytes
-// всегда загружает хранилище с пустым (дефолтным) алиасом - выбор конкретного
-// алиаса в PKCS12 с несколькими ключами не поддержан ни на уровне gokalkan,
-// ни здесь. Для типичного PKCS12 с одним ключом (основной случай использования)
-// это не имеет значения.
-func LoadSigner(cli *gokalkan.Client, keyB64, password string) (certPEM string, err error) {
+// и возвращает PEM-сертификат подписанта. alias - опциональный SignerRequest.KeyAlias
+// (см. KC_LoadKeyStore/KC_GetCertificatesList) - для PKCS12 с несколькими
+// ключами выбирает нужный; для типичного PKCS12 с одним ключом можно не
+// передавать (пустой alias означает дефолтный, как и раньше).
+func LoadSigner(cli *gokalkan.Client, keyB64, password string, alias ...string) (certPEM string, err error) {
 	key, err := base64.StdEncoding.DecodeString(keyB64)
 	if err != nil {
 		return "", fmt.Errorf("decode key: %w", err)
 	}
 
-	if err := cli.LoadKeyStoreFromBytes(key, password); err != nil {
+	if err := cli.LoadKeyStoreFromBytes(key, password, alias...); err != nil {
 		return "", err
 	}
 

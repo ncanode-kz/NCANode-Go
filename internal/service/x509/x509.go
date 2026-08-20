@@ -69,7 +69,7 @@ func sign(a *app.App, req dto.SbaSignRequest) (dto.SbaSignResponse, error) {
 	a.SigningMu.Lock()
 	defer a.SigningMu.Unlock()
 
-	certPEM, err := kalkanutil.LoadSigner(a.Shared, req.Signer.Key, req.Signer.Password)
+	certPEM, err := kalkanutil.LoadSigner(a.Shared, req.Signer.Key, req.Signer.Password, req.Signer.KeyAlias)
 	if err != nil {
 		return dto.SbaSignResponse{}, httpapi.ServerError("failed to load signer", err)
 	}

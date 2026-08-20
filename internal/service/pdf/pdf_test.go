@@ -64,11 +64,17 @@ func TestSignVerifyRoundtrip(t *testing.T) {
 	}
 
 	s := verifyResp.Signers[0]
-	if s.Reason != "pdf handler test" || s.Location != "Almaty" {
+	if s.Reason == nil || *s.Reason != "pdf handler test" || s.Location == nil || *s.Location != "Almaty" {
 		t.Errorf("unexpected reason/location: %+v", s)
+	}
+	if s.ContactInfo != nil {
+		t.Errorf("expected nil contactInfo (not provided by signer), got %q", *s.ContactInfo)
 	}
 	if s.SignatureAlgorithm != "ETSI.CAdES.detached" {
 		t.Errorf("unexpected signatureAlgorithm: %q", s.SignatureAlgorithm)
+	}
+	if s.DigestAlgorithm == "" || s.DigestAlgorithm == "unknown" {
+		t.Errorf("expected a real digestAlgorithm OID, got %q", s.DigestAlgorithm)
 	}
 	if s.Certificate == nil || s.Certificate.Subject.IIN != "123456789011" {
 		t.Errorf("unexpected certificate: %+v", s.Certificate)

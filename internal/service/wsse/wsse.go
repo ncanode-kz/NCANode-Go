@@ -32,7 +32,7 @@ func sign(a *app.App, req dto.WsseSignRequest) (dto.XmlSignResponse, error) {
 	a.SigningMu.Lock()
 	defer a.SigningMu.Unlock()
 
-	if _, err := kalkanutil.LoadSigner(a.Shared, req.Key, req.Password); err != nil {
+	if _, err := kalkanutil.LoadSigner(a.Shared, req.Key, req.Password, req.KeyAlias); err != nil {
 		return dto.XmlSignResponse{}, httpapi.ServerError("failed to load signer", err)
 	}
 

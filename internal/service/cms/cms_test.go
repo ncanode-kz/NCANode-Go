@@ -144,8 +144,18 @@ func TestSignWithTSP(t *testing.T) {
 	if !verifyResp.Valid {
 		t.Fatalf("expected valid=true, got %+v", verifyResp)
 	}
-	if verifyResp.Signers[0].TSP == nil || verifyResp.Signers[0].TSP.GenTime == nil {
-		t.Errorf("expected TSP genTime to be populated, got %+v", verifyResp.Signers[0])
+	tsp := verifyResp.Signers[0].TSP
+	if tsp == nil || tsp.GenTime == nil {
+		t.Fatalf("expected TSP genTime to be populated, got %+v", verifyResp.Signers[0])
+	}
+	if tsp.SerialNumber == "" {
+		t.Errorf("expected TSP serialNumber to be populated, got %+v", tsp)
+	}
+	if tsp.Policy == "" {
+		t.Errorf("expected TSP policy to be populated, got %+v", tsp)
+	}
+	if tsp.Hash == "" {
+		t.Errorf("expected TSP hash to be populated, got %+v", tsp)
 	}
 }
 
@@ -413,33 +423,37 @@ func TestResolveSignContentDataInvalidBase64(t *testing.T) {
 	}
 }
 
-func TestExtractSigningTimesAtoiOverflow(t *testing.T) {
-	// Регекс "Signature N (\d+)" технически допускает сколь угодно длинное
-	// число - при переполнении int strconv.Atoi возвращает ошибку, и секция
-	// должна быть пропущена (continue), а не запаниковать.
-	huge := "Signature N 99999999999999999999999999999\nSigning time 01.02.2024 10:20:30 +05:00\n"
-	if got := extractSigningTimes(huge); len(got) != 0 {
-		t.Errorf("expected no signing times for overflowing signature number, got %+v", got)
+func TestExtractTspInfosMalformed(t *testing.T) {
+	// Не CMS вообще - pkcs7.Parse должен провалиться, функция должна вернуть
+	// пустую карту, а не запаниковать.
+	if got := extractTspInfos([]byte("not a cms")); len(got) != 0 {
+		t.Errorf("expected no tsp infos for garbage input, got %+v", got)
+	}
+
+	if got := extractTspInfos(nil); len(got) != 0 {
+		t.Errorf("expected no tsp infos for empty input, got %+v", got)
 	}
 }
 
-func TestExtractSigningTimesMalformed(t *testing.T) {
-	// Секция без "Signing time" вообще - должна быть пропущена (continue).
-	noTime := "Signature N 1\nsome other text\n"
-	if got := extractSigningTimes(noTime); len(got) != 0 {
-		t.Errorf("expected no signing times, got %+v", got)
+func TestExtractTspInfosWithoutTSP(t *testing.T) {
+	a := testutil.NewApp(t)
+
+	signResp, err := sign(a, dto.CmsCreateRequest{
+		Data:    base64.StdEncoding.EncodeToString([]byte("no tsp here")),
+		Signers: []dto.SignerRequest{signerReq(t, "individual/valid/individual_valid.p12")},
+	}, false)
+	if err != nil {
+		t.Fatalf("sign: %s", err)
 	}
 
-	// Некорректный номер подписи - Atoi должен провалиться (continue), но
-	// такое не может возникнуть из настоящего regex (\d+), проверяем что
-	// функция не паникует на пустом вводе.
-	if got := extractSigningTimes(""); len(got) != 0 {
-		t.Errorf("expected no signing times for empty input, got %+v", got)
+	cms, err := base64.StdEncoding.DecodeString(signResp.CMS)
+	if err != nil {
+		t.Fatalf("decode cms: %s", err)
 	}
 
-	valid := "Signature N 1\nSigning time 01.02.2024 10:20:30 +05:00\n"
-	got := extractSigningTimes(valid)
-	if got[1] == "" {
-		t.Errorf("expected signing time for signature 1, got %+v", got)
+	// CMS без WithTSP не содержит unsigned-атрибута id-aa-signatureTimeStampToken -
+	// карта должна быть пустой, а не запаниковать/дать ложный TspInfo.
+	if got := extractTspInfos(cms); len(got) != 0 {
+		t.Errorf("expected no tsp infos without WithTSP, got %+v", got)
 	}
 }

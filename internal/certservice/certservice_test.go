@@ -110,7 +110,42 @@ func TestBuildIndividualValid(t *testing.T) {
 		t.Errorf("unexpected serial number %q", info.SerialNumber)
 	}
 	if len(info.Revocations) != 1 || info.Revocations[0].By != "OCSP" || info.Revocations[0].Revoked {
-		t.Errorf("unexpected revocations: %+v", info.Revocations)
+		t.Fatalf("unexpected revocations: %+v", info.Revocations)
+	}
+
+	rev := info.Revocations[0]
+	if rev.Reason == nil || *rev.Reason != "OK" {
+		t.Errorf("expected OCSP reason=OK, got %+v", rev.Reason)
+	}
+	if rev.RevocationTime != nil {
+		t.Errorf("expected nil revocationTime for a non-revoked cert, got %+v", *rev.RevocationTime)
+	}
+}
+
+func TestBuildIndividualRevokedOCSP(t *testing.T) {
+	cli := newTestClient(t)
+	cert := exportCert(t, cli, "../testdata/certs/individual/revoked/individual_revoked.p12")
+
+	info, err := Build(cli, nil, cert, true, false)
+	if err != nil {
+		t.Fatalf("Build: %s", err)
+	}
+
+	if info.Valid {
+		t.Error("expected valid=false for revoked cert")
+	}
+	if len(info.Revocations) != 1 || info.Revocations[0].By != "OCSP" || !info.Revocations[0].Revoked {
+		t.Fatalf("expected a revoked OCSP entry, got: %+v", info.Revocations)
+	}
+
+	rev := info.Revocations[0]
+	// OCSP: Java безусловно пишет "OK" в reason - и для отозванного, и для
+	// активного статуса (см. reasonFor).
+	if rev.Reason == nil || *rev.Reason != "OK" {
+		t.Errorf("expected OCSP reason=OK even when revoked, got %+v", rev.Reason)
+	}
+	if rev.RevocationTime == nil {
+		t.Error("expected non-nil revocationTime for a revoked cert")
 	}
 }
 
@@ -141,7 +176,15 @@ func TestBuildIndividualRevokedCRL(t *testing.T) {
 		t.Error("expected valid=false for revoked cert")
 	}
 	if len(info.Revocations) != 1 || info.Revocations[0].By != "CRL" || !info.Revocations[0].Revoked {
-		t.Errorf("expected a revoked CRL entry, got: %+v", info.Revocations)
+		t.Fatalf("expected a revoked CRL entry, got: %+v", info.Revocations)
+	}
+
+	rev := info.Revocations[0]
+	if rev.RevocationTime == nil || *rev.RevocationTime != "2026-05-08T14:57:29.000+00:00" {
+		t.Errorf("unexpected revocationTime: %+v", rev.RevocationTime)
+	}
+	if rev.Reason == nil || *rev.Reason != "CERTIFICATE_HOLD" {
+		t.Errorf("unexpected reason: %+v", rev.Reason)
 	}
 }
 

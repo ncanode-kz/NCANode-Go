@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/digitorus/pkcs7"
 	"github.com/ncanode-kz/NCANode-Go/internal/app"
 	"github.com/ncanode-kz/NCANode-Go/internal/certservice"
 	"github.com/ncanode-kz/NCANode-Go/internal/dto"
@@ -42,7 +43,7 @@ func sign(a *app.App, req dto.PdfSignRequest) (dto.PdfSignResponse, error) {
 	defer a.SigningMu.Unlock()
 
 	for i, signer := range req.Signers {
-		if _, err := kalkanutil.LoadSigner(a.Shared, signer.Signer.Key, signer.Signer.Password); err != nil {
+		if _, err := kalkanutil.LoadSigner(a.Shared, signer.Signer.Key, signer.Signer.Password, signer.Signer.KeyAlias); err != nil {
 			return dto.PdfSignResponse{}, httpapi.ServerError(fmt.Sprintf("failed to load signer #%d", i), err)
 		}
 
@@ -87,6 +88,7 @@ func verify(a *app.App, req dto.PdfVerifyRequest) (dto.PdfVerificationResponse, 
 			Location:           s.Location,
 			ContactInfo:        s.ContactInfo,
 			SignatureAlgorithm: s.SubFilter,
+			DigestAlgorithm:    digestAlgorithmOID(s.CMS),
 		}
 
 		if !s.SignDate.IsZero() {
@@ -127,4 +129,19 @@ func verify(a *app.App, req dto.PdfVerifyRequest) (dto.PdfVerificationResponse, 
 	}
 
 	return dto.PdfVerificationResponse{StatusResponse: dto.OK(), Valid: allValid, Signers: out}, nil
+}
+
+// digestAlgorithmOID достаёт OID алгоритма хэширования CMS (отдельно от
+// signatureAlgorithm/SubFilter) структурным ASN.1-разбором detached-подписи -
+// аналог si.getDigestAlgOID() в Java PdfService, где si - CMS SignerInfo,
+// полученный тем же способом (разбор самого CMS, без обращения к
+// KalkanCrypt). "unknown" - тот же фолбэк, что и в Java, на случай если CMS
+// не распарсился или не содержит подписантов.
+func digestAlgorithmOID(cms []byte) string {
+	p7, err := pkcs7.Parse(cms)
+	if err != nil || len(p7.Signers) == 0 {
+		return "unknown"
+	}
+
+	return p7.Signers[0].DigestAlgorithm.Algorithm.String()
 }

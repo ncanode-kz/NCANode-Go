@@ -6,15 +6,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"regexp"
-	"strconv"
-	"time"
 
+	"github.com/digitorus/pkcs7"
 	"github.com/ncanode-kz/NCANode-Go/internal/app"
 	"github.com/ncanode-kz/NCANode-Go/internal/certservice"
 	"github.com/ncanode-kz/NCANode-Go/internal/dto"
 	"github.com/ncanode-kz/NCANode-Go/internal/httpapi"
 	"github.com/ncanode-kz/NCANode-Go/internal/kalkanutil"
+	"github.com/ncanode-kz/NCANode-Go/internal/tsp"
 	"github.com/ncanode-kz/gokalkan"
 )
 
@@ -66,7 +65,7 @@ func sign(a *app.App, req dto.CmsCreateRequest, add bool) (dto.CmsResponse, erro
 	}
 
 	for i, signer := range req.Signers {
-		if _, err := kalkanutil.LoadSigner(cli, signer.Key, signer.Password); err != nil {
+		if _, err := kalkanutil.LoadSigner(cli, signer.Key, signer.Password, signer.KeyAlias); err != nil {
 			return dto.CmsResponse{}, httpapi.ServerError(fmt.Sprintf("failed to load signer #%d", i), err)
 		}
 
@@ -152,7 +151,6 @@ func verify(a *app.App, req dto.CmsVerifyRequest) (dto.CmsVerificationResponse, 
 
 	cli := a.Shared
 
-	var info string
 	var cryptoErr error
 
 	if req.Data != "" {
@@ -160,12 +158,12 @@ func verify(a *app.App, req dto.CmsVerifyRequest) (dto.CmsVerificationResponse, 
 		if decodeErr != nil {
 			return dto.CmsVerificationResponse{}, httpapi.ClientError("data is not valid base64", decodeErr)
 		}
-		info, cryptoErr = cli.VerifyDetached(cms, data)
+		_, cryptoErr = cli.VerifyDetached(cms, data)
 	} else {
-		info, cryptoErr = cli.Verify(cms)
+		_, cryptoErr = cli.Verify(cms)
 	}
 
-	signingTimes := extractSigningTimes(info)
+	tspInfos := extractTspInfos(cms)
 
 	var signers []dto.CmsSignerInfo
 	valid := cryptoErr == nil
@@ -190,8 +188,8 @@ func verify(a *app.App, req dto.CmsVerifyRequest) (dto.CmsVerificationResponse, 
 		}
 
 		signerInfo := dto.CmsSignerInfo{Certificates: []dto.CertificateInfo{certInfo}}
-		if t, ok := signingTimes[i]; ok {
-			signerInfo.TSP = &dto.TspInfo{GenTime: &t}
+		if tsp, ok := tspInfos[i]; ok {
+			signerInfo.TSP = &tsp
 		}
 
 		signers = append(signers, signerInfo)
@@ -204,48 +202,48 @@ func verify(a *app.App, req dto.CmsVerifyRequest) (dto.CmsVerificationResponse, 
 	return dto.CmsVerificationResponse{StatusResponse: dto.OK(), Valid: valid, Signers: signers}, nil
 }
 
-// extractSigningTimes парсит время подписи из человекочитаемого отчёта
-// нативной библиотеки (Client.Verify/VerifyDetached), по одному "Signature N
-// k" блоку - ключ карты 1-based, как нумерует сама нативная библиотека.
+// extractTspInfos структурно разбирает CMS (без обращения к KalkanCrypt,
+// см. internal/tsp) и собирает TspInfo для каждого подписанта, у которого
+// есть unsigned-атрибут id-aa-signatureTimeStampToken - ключ карты 1-based,
+// как нумерует GetCertFromCMS/нативная библиотека (см. цикл в verify).
+// Порядок p7.Signers, возвращаемый digitorus/pkcs7, эмпирически считается
+// совпадающим с этой нумерацией - как и для XML/WSSE (см. README), это
+// предположение не документировано производителем нативной библиотеки.
 //
-// gokalkan сейчас не возвращает эту информацию структурно (только текстовый
-// отчёт), поэтому остальные поля TspInfo (serialNumber/policy/tsa/hash)
-// заполнить нечем - известное упрощение, см. README.
-func extractSigningTimes(info string) map[int]string {
-	result := make(map[int]string)
+// Отсутствие TSP-токена или ошибка разбора конкретного подписанта - не
+// фатальны (как и в Java CmsService, где это же оборачивается в try/catch с
+// log.warn): просто не добавляем TspInfo для этого подписанта.
+func extractTspInfos(cms []byte) map[int]dto.TspInfo {
+	result := make(map[int]dto.TspInfo)
 
-	sections := signatureHeaderRe.Split(info, -1)
-	headers := signatureHeaderRe.FindAllStringSubmatch(info, -1)
+	p7, err := pkcs7.Parse(cms)
+	if err != nil {
+		return result
+	}
 
-	for i, h := range headers {
-		if i+1 >= len(sections) {
+	for i, signer := range p7.Signers {
+		for _, attr := range signer.UnauthenticatedAttributes {
+			if attr.Type.String() != tsp.AttributeOID {
+				continue
+			}
+
+			info, err := tsp.Extract(attr.Value.Bytes)
+			if err != nil {
+				continue
+			}
+
+			genTime := info.GenTime.UTC().Format(certservice.DateLayout)
+			result[i+1] = dto.TspInfo{
+				SerialNumber:     info.SerialNumber,
+				GenTime:          &genTime,
+				Policy:           info.Policy,
+				TSPHashAlgorithm: info.TSPHashAlgorithm,
+				Hash:             info.Hash,
+			}
+
 			break
 		}
-
-		m := signingTimeRe.FindStringSubmatch(sections[i+1])
-		if m == nil {
-			continue
-		}
-
-		n, err := strconv.Atoi(h[1])
-		if err != nil {
-			continue
-		}
-
-		t, err := time.Parse("02.01.2006 15:04:05 -07:00", m[1])
-		if err != nil {
-			continue
-		}
-
-		formatted := t.UTC().Format(certservice.DateLayout)
-		result[n] = formatted
 	}
 
 	return result
 }
-
-//nolint:gochecknoglobals
-var (
-	signatureHeaderRe = regexp.MustCompile(`Signature N (\d+)`)
-	signingTimeRe     = regexp.MustCompile(`Signing time (\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2} [+-]\d{2}:\d{2})`)
-)
