@@ -67,7 +67,7 @@ func verify(a *app.App, req dto.PdfVerifyRequest) (dto.PdfVerificationResponse, 
 		return dto.PdfVerificationResponse{}, httpapi.ClientError("pdf is not valid base64", err)
 	}
 
-	allValid, signers, err := a.Shared.VerifyPDF(pdfData)
+	_, signers, err := a.Shared.VerifyPDF(pdfData)
 	if err != nil {
 		if errors.Is(err, gokalkan.ErrNoPDFSignatures) {
 			return dto.PdfVerificationResponse{}, httpapi.NotFoundError("PDF document contains no digital signatures", err)
@@ -79,7 +79,7 @@ func verify(a *app.App, req dto.PdfVerifyRequest) (dto.PdfVerificationResponse, 
 	// пересчитываем с учётом валидности сертификата (цепочка/отозванность),
 	// как это делает Java (cmsOk && cert.isValid(...)).
 	out := make([]dto.PdfSignerInfo, 0, len(signers))
-	allValid = true
+	allValid := true
 
 	for _, s := range signers {
 		info := dto.PdfSignerInfo{
