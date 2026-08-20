@@ -14,14 +14,17 @@ permissions:
   contents: read
   packages: write
 
-env:
-  IMAGE: ghcr.io/${{ github.repository }}
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # ghcr.io требует lowercase имя образа, а github.repository сохраняет
+      # регистр репозитория (NCANode-Go) - GitHub Actions expressions не
+      # умеют lower() сами по себе, отсюда отдельный shell-шаг.
+      - name: Compute lowercase image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v3
 
