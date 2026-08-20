@@ -46,6 +46,8 @@ jobs:
           sudo mv /tmp/libkalkancryptwr-64.so /usr/lib/libkalkancryptwr-64.so
           sudo ldconfig
       - name: Test with coverage
+        env:
+          TZ: UTC
         run: go test -covermode=atomic -coverprofile=coverage.out ./...
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1
