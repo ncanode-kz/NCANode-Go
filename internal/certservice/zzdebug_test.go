@@ -7,8 +7,8 @@ func TestZZDebugOCSPRaw(t *testing.T) {
 	cert := exportCert(t, cli, "../testdata/certs/individual/valid/individual_valid.p12")
 
 	raw, err := cli.ValidateCertOCSP(cert)
-	t.Logf("raw=%q err=%v", raw, err)
+	t.Errorf("DEBUG raw=%q err=%v", raw, err)
 
 	sig, err := cli.Sign([]byte("debug sign test"), true, false)
-	t.Logf("sign len=%d err=%v", len(sig), err)
+	t.Errorf("DEBUG sign len=%d err=%v", len(sig), err)
 }

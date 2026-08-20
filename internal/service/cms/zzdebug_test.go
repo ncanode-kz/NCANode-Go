@@ -19,9 +19,9 @@ func TestZZDebugSignError(t *testing.T) {
 		Signers: []dto.SignerRequest{signerReq(t, "individual/valid/individual_valid.p12")},
 	}, false)
 	if err != nil {
-		t.Logf("top error: %v", err)
-		t.Logf("unwrapped: %v", errors.Unwrap(err))
+		t.Errorf("DEBUG top error: %v", err)
+		t.Errorf("DEBUG unwrapped: %v", errors.Unwrap(err))
 	} else {
-		t.Log("no error")
+		t.Error("DEBUG no error")
 	}
 }
