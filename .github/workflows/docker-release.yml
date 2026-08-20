@@ -1,8 +1,14 @@
 name: Create Docker Release
 
+# Триггерится тем же тегом, что и release.yml, а не событием "release:
+# published" - релиз в release.yml создаётся от имени GITHUB_TOKEN, а такие
+# события GitHub Actions намеренно не ретранслирует в другие workflow (защита
+# от рекурсии), так что "release: published" здесь никогда не сработал бы
+# автоматически без ручного клика "Publish" в UI.
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*.*.*"
 
 permissions:
   contents: read
@@ -37,6 +43,6 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.event.release.tag_name }}
+            ${{ env.IMAGE }}:${{ github.ref_name }}
           secrets: |
             kalkan_so_url=${{ secrets.KALKAN_SO_URL }}
