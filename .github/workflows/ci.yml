@@ -45,15 +45,19 @@ jobs:
           curl -sSfL -o /tmp/libkalkancryptwr-64.so "$KALKAN_SO_URL"
           sudo mv /tmp/libkalkancryptwr-64.so /usr/lib/libkalkancryptwr-64.so
           sudo ldconfig
-      - name: DEBUG install test CA certs system-wide
+      # KalkanCrypt подтверждает валидность цепочки не только через сертификаты,
+      # переданные в WithCerts, но и опирается на системное доверенное
+      # хранилище - без этого шага X509LoadCertificateFromFile для тестовых
+      # GOST-2022 root/intermediate падает с "certificate expired or not yet
+      # valid" (0x8f00042), хотя сами сертификаты валидны до 2032 года.
+      # Эмпирически подтверждено - см. gokalkan wtest.Dockerfile.
+      - name: Install test CA certs system-wide
         run: |
           openssl x509 -inform DER -in internal/testdata/certs/root_test_gost_2022.cer -out /tmp/root_test_gost_2022.crt
           openssl x509 -inform DER -in internal/testdata/certs/nca_gost2022_test.cer -out /tmp/nca_gost2022_test.crt
           sudo cp /tmp/root_test_gost_2022.crt /tmp/nca_gost2022_test.crt /usr/local/share/ca-certificates/
           sudo update-ca-certificates
       - name: Test with coverage
-        env:
-          TZ: UTC
         run: go test -covermode=atomic -coverprofile=coverage.out ./...
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1
