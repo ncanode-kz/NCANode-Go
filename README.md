@@ -90,6 +90,20 @@ SDK не лежит в открытом доступе, его нужно зап
 
 ## Запуск
 
+### Docker
+
+Образ уже включает KalkanCrypt SDK — доустанавливать ничего не нужно (только
+**linux/amd64**, см. [«Требования»](#требования)):
+
+```sh
+docker run -p 14579:14579 -v ncanode-cache:/app/cache ghcr.io/ncanode-kz/ncanode-go:latest
+```
+
+Другие теги — на странице [Releases](https://github.com/ncanode-kz/NCANode-Go/releases)
+(например, `ghcr.io/ncanode-kz/ncanode-go:v1.2.3`).
+
+### Из исходников
+
 ```sh
 go run ./cmd/ncanode
 ```
